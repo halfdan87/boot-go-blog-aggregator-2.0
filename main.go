@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/halfdan87/boot-go-blog-aggregator-2.0/internal/config"
+	"github.com/halfdan87/boot-go-blog-aggregator-2.0/internal/database"
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -15,9 +20,18 @@ func main() {
 		panic(err)
 	}
 
-	s := &state{cfg: cfg}
+	db, err := sql.Open("postgres", cfg.DbUrl)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	dbQueries := database.New(db)
+
+	s := &state{cfg: cfg, db: dbQueries}
 	c := &commands{mapping: make(map[string]func(*state, command) error)}
 	c.register("login", login)
+	c.register("register", register)
 
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -28,7 +42,11 @@ func main() {
 		fmt.Println("No username given")
 		os.Exit(1)
 	}
-	c.run(s, command{name: args[0], args: args[1:]})
+	err = c.run(s, command{name: args[0], args: args[1:]})
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	/*
 		for {
@@ -46,7 +64,28 @@ func main() {
 }
 
 func login(s *state, cmd command) error {
-	return s.cfg.SetUser(cmd.args[0])
+	// get user from db and set it in config
+	username := cmd.args[0]
+	_, err := s.db.GetUser(context.Background(), username)
+	if err != nil {
+		return err
+	}
+	return s.cfg.SetUser(username)
+}
+
+func register(s *state, cmd command) error {
+	name := cmd.args[0]
+	createParams := database.CreateUserParams{
+		Name: name,
+		ID:   uuid.New(),
+	}
+
+	dbUser, err := s.db.CreateUser(context.Background(), createParams)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("User created %v\n", dbUser)
+	return s.cfg.SetUser(name)
 }
 
 func readCommand() (command, error) {
@@ -80,6 +119,7 @@ func readArgs() ([]string, error) {
 
 type state struct {
 	cfg *config.Config
+	db  *database.Queries
 }
 
 type command struct {
