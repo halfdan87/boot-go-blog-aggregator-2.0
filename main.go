@@ -121,18 +121,20 @@ func login(s *state, cmd command) error {
 
 func aggregate(s *state, cmd command) error {
 	if len(cmd.args) == 0 {
-		fmt.Println("No url given")
-		//os.Exit(1)
+		fmt.Println("No interval given")
+		os.Exit(1)
 	}
-	//url := cmd.args[0]
 
-	url := "https://www.wagslane.dev/index.xml"
-	feed, err := fetchRssFeed(context.Background(), url)
+	durationStr := cmd.args[0]
+	duration, err := time.ParseDuration(durationStr)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Feed: %v\n", feed)
-	return nil
+
+	ticker := time.NewTicker(duration)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
 }
 
 func allFeeds(s *state, cmd command) error {
@@ -373,4 +375,24 @@ func fetchRssFeed(ctx context.Context, url string) (*RSSFeed, error) {
 	}
 
 	return &feed, nil
+}
+
+func scrapeFeeds(s *state) error {
+	feed, err := s.db.GetNextFeedToFetch(context.Background())
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Fetching feed: %s\n", feed.Url)
+
+	rssFeed, err := fetchRssFeed(context.Background(), feed.Url)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range rssFeed.Channel.Items {
+		title := item.Title
+		fmt.Printf("* %s\n", title)
+	}
+	return nil
 }
