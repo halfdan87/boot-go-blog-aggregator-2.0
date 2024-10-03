@@ -32,16 +32,15 @@ func main() {
 	c := &commands{mapping: make(map[string]func(*state, command) error)}
 	c.register("login", login)
 	c.register("register", register)
+	c.register("reset", deleteAll)
+	c.register("users", list)
 
 	args := os.Args[1:]
 	if len(args) == 0 {
 		fmt.Println("No command given")
 		os.Exit(1)
 	}
-	if len(args) == 1 {
-		fmt.Println("No username given")
-		os.Exit(1)
-	}
+
 	err = c.run(s, command{name: args[0], args: args[1:]})
 	if err != nil {
 		fmt.Println(err)
@@ -63,8 +62,35 @@ func main() {
 	*/
 }
 
+func list(s *state, _ command) error {
+	users, err := s.db.GetAllUsers(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, user := range users {
+		if user.Name == s.cfg.CurrentUserId {
+			fmt.Printf("* %s (current)\n", user.Name)
+		} else {
+			fmt.Printf("* %s\n", user.Name)
+		}
+	}
+	return nil
+}
+
+func deleteAll(s *state, _ command) error {
+	err := s.db.DeleteAllUsers(context.Background())
+	if err != nil {
+		return err
+	}
+	return s.cfg.SetUser("")
+}
+
 func login(s *state, cmd command) error {
 	// get user from db and set it in config
+	if len(cmd.args) == 0 {
+		fmt.Println("No username given")
+		os.Exit(1)
+	}
 	username := cmd.args[0]
 	_, err := s.db.GetUser(context.Background(), username)
 	if err != nil {
@@ -74,6 +100,10 @@ func login(s *state, cmd command) error {
 }
 
 func register(s *state, cmd command) error {
+	if len(cmd.args) == 0 {
+		fmt.Println("No username given")
+		os.Exit(1)
+	}
 	name := cmd.args[0]
 	createParams := database.CreateUserParams{
 		Name: name,
