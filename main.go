@@ -40,6 +40,7 @@ func main() {
 	c.register("users", list)
 	c.register("agg", aggregate)
 	c.register("addfeed", addFeed)
+	c.register("feeds", allFeeds)
 
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -118,6 +119,23 @@ func aggregate(s *state, cmd command) error {
 		return err
 	}
 	fmt.Printf("Feed: %v\n", feed)
+	return nil
+}
+
+func allFeeds(s *state, cmd command) error {
+	feeds, err := s.db.GetAllFeeds(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, feed := range feeds {
+		// find user who created this feed
+		dbUser, err := s.db.GetUserById(context.Background(), feed.UserID)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("* %s, %s, %s\n", feed.Name, feed.Url, dbUser.Name)
+	}
 	return nil
 }
 
