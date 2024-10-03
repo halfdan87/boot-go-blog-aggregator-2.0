@@ -8,6 +8,7 @@ import (
 	"html"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,6 +45,7 @@ func main() {
 	c.register("follow", middlewareLoggedIn(follow))
 	c.register("following", middlewareLoggedIn(following))
 	c.register("unfollow", middlewareLoggedIn(unfollow))
+	c.register("browse", middlewareLoggedIn(browse))
 
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -202,6 +204,28 @@ func unfollow(s *state, cmd command, user database.User) error {
 		return err
 	}
 	fmt.Printf("Feed unfollowed: %s - %s\n", dbFeed.Name, dbFeed.Url)
+	return nil
+}
+
+func browse(s *state, cmd command, user database.User) (err error) {
+	limit := 2
+	if len(cmd.args) == 1 {
+		limit, err = strconv.Atoi(cmd.args[0])
+		if err != nil {
+			return err
+		}
+	}
+
+	posts, err := s.db.GetPostsForUserWithLimit(context.Background(), database.GetPostsForUserWithLimitParams{
+		UserID: user.ID,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		return err
+	}
+	for _, post := range posts {
+		fmt.Printf("* %s\n", post.Title)
+	}
 	return nil
 }
 
@@ -391,8 +415,32 @@ func scrapeFeeds(s *state) error {
 	}
 
 	for _, item := range rssFeed.Channel.Items {
-		title := item.Title
-		fmt.Printf("* %s\n", title)
+		publishedAt, err := tryParsePublishedAt(item.PubDate)
+		if err != nil {
+			return err
+		}
+
+		createPostParams := database.CreatePostParams{
+			ID:          uuid.New(),
+			Title:       item.Title,
+			Url:         item.Link,
+			Description: sql.NullString{String: item.Description, Valid: true},
+			PublishedAt: publishedAt,
+			FeedID:      feed.ID,
+		}
+
+		_, err = s.db.CreatePost(context.Background(), createPostParams)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func tryParsePublishedAt(pubDate string) (time.Time, error) {
+	t, err := time.Parse(time.RFC1123, pubDate)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t, nil
 }
