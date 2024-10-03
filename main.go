@@ -39,6 +39,7 @@ func main() {
 	c.register("reset", deleteAll)
 	c.register("users", list)
 	c.register("agg", aggregate)
+	c.register("addfeed", addFeed)
 
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -117,6 +118,37 @@ func aggregate(s *state, cmd command) error {
 		return err
 	}
 	fmt.Printf("Feed: %v\n", feed)
+	return nil
+}
+
+func addFeed(s *state, cmd command) error {
+	if len(cmd.args) < 2 {
+		fmt.Println("No url given")
+		os.Exit(1)
+	}
+	name := cmd.args[0]
+	url := cmd.args[1]
+
+	getUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserId)
+	if err != nil {
+		return err
+	}
+	if getUser.Name != s.cfg.CurrentUserId {
+		return fmt.Errorf("you are not logged in")
+	}
+
+	createParams := database.CreateFeedParams{
+		ID:     uuid.New(),
+		Name:   name,
+		Url:    url,
+		UserID: getUser.ID,
+	}
+
+	dbFeed, err := s.db.CreateFeed(context.Background(), createParams)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Feed created %v\n", dbFeed)
 	return nil
 }
 
