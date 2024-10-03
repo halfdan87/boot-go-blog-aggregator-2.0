@@ -43,6 +43,7 @@ func main() {
 	c.register("feeds", allFeeds)
 	c.register("follow", middlewareLoggedIn(follow))
 	c.register("following", middlewareLoggedIn(following))
+	c.register("unfollow", middlewareLoggedIn(unfollow))
 
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -174,6 +175,31 @@ func follow(s *state, cmd command, user database.User) error {
 		return err
 	}
 	fmt.Printf("Feed follow created: %s - %s\n", dbFeedFollow.FeedName, dbFeedFollow.UserName)
+	return nil
+}
+
+func unfollow(s *state, cmd command, user database.User) error {
+	if len(cmd.args) < 1 {
+		fmt.Println("No url given")
+		os.Exit(1)
+	}
+	url := cmd.args[0]
+
+	dbFeed, err := s.db.GetFeedByUrl(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	deleteParams := database.DeleteFeedFollowByUserIdAndFeedUrlParams{
+		Url:    url,
+		UserID: user.ID,
+	}
+
+	err = s.db.DeleteFeedFollowByUserIdAndFeedUrl(context.Background(), deleteParams)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Feed unfollowed: %s - %s\n", dbFeed.Name, dbFeed.Url)
 	return nil
 }
 
