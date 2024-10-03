@@ -25,8 +25,7 @@ brew install sqlite
 4. Create the database schema
 
 ```bash
-cd sql/schema
-goose -dir ../../sql/schema up
+./gooseUp.sh
 ```
 
 5. Create the database client
