@@ -39,10 +39,10 @@ func main() {
 	c.register("reset", deleteAll)
 	c.register("users", list)
 	c.register("agg", aggregate)
-	c.register("addfeed", addFeed)
+	c.register("addfeed", middlewareLoggedIn(addFeed))
 	c.register("feeds", allFeeds)
-	c.register("follow", follow)
-	c.register("following", following)
+	c.register("follow", middlewareLoggedIn(follow))
+	c.register("following", middlewareLoggedIn(following))
 
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -69,6 +69,16 @@ func main() {
 			}
 		}
 	*/
+}
+
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, cmd command) error {
+		user, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserId)
+		if err != nil {
+			return err
+		}
+		return handler(s, cmd, user)
+	}
 }
 
 func list(s *state, _ command) error {
@@ -141,7 +151,7 @@ func allFeeds(s *state, cmd command) error {
 	return nil
 }
 
-func follow(s *state, cmd command) error {
+func follow(s *state, cmd command, user database.User) error {
 	if len(cmd.args) < 1 {
 		fmt.Println("No url given")
 		os.Exit(1)
@@ -153,19 +163,10 @@ func follow(s *state, cmd command) error {
 		return err
 	}
 
-	getUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserId)
-	if err != nil {
-		return err
-	}
-
-	if getUser.Name != s.cfg.CurrentUserId {
-		return fmt.Errorf("you are not logged in")
-	}
-
 	createParams := database.CreateFeedFollowParams{
 		ID:     uuid.New(),
 		FeedID: dbFeed.ID,
-		UserID: getUser.ID,
+		UserID: user.ID,
 	}
 
 	dbFeedFollow, err := s.db.CreateFeedFollow(context.Background(), createParams)
@@ -176,13 +177,8 @@ func follow(s *state, cmd command) error {
 	return nil
 }
 
-func following(s *state, _ command) error {
-	getUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserId)
-	if err != nil {
-		return err
-	}
-
-	follows, err := s.db.GetFeedFollowsForUser(context.Background(), getUser.ID)
+func following(s *state, _ command, user database.User) error {
+	follows, err := s.db.GetFeedFollowsForUser(context.Background(), user.ID)
 	if err != nil {
 		return err
 	}
@@ -192,7 +188,7 @@ func following(s *state, _ command) error {
 	return nil
 }
 
-func addFeed(s *state, cmd command) error {
+func addFeed(s *state, cmd command, user database.User) error {
 	if len(cmd.args) < 2 {
 		fmt.Println("No url given")
 		os.Exit(1)
@@ -200,19 +196,11 @@ func addFeed(s *state, cmd command) error {
 	name := cmd.args[0]
 	url := cmd.args[1]
 
-	getUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserId)
-	if err != nil {
-		return err
-	}
-	if getUser.Name != s.cfg.CurrentUserId {
-		return fmt.Errorf("you are not logged in")
-	}
-
 	createParams := database.CreateFeedParams{
 		ID:     uuid.New(),
 		Name:   name,
 		Url:    url,
-		UserID: getUser.ID,
+		UserID: user.ID,
 	}
 
 	dbFeed, err := s.db.CreateFeed(context.Background(), createParams)
@@ -225,7 +213,7 @@ func addFeed(s *state, cmd command) error {
 	createFollowParams := database.CreateFeedFollowParams{
 		ID:     uuid.New(),
 		FeedID: dbFeed.ID,
-		UserID: getUser.ID,
+		UserID: user.ID,
 	}
 
 	_, err = s.db.CreateFeedFollow(context.Background(), createFollowParams)
