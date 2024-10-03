@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"fmt"
+	"html"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/halfdan87/boot-go-blog-aggregator-2.0/internal/config"
@@ -34,6 +38,7 @@ func main() {
 	c.register("register", register)
 	c.register("reset", deleteAll)
 	c.register("users", list)
+	c.register("agg", aggregate)
 
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -97,6 +102,22 @@ func login(s *state, cmd command) error {
 		return err
 	}
 	return s.cfg.SetUser(username)
+}
+
+func aggregate(s *state, cmd command) error {
+	if len(cmd.args) == 0 {
+		fmt.Println("No url given")
+		//os.Exit(1)
+	}
+	//url := cmd.args[0]
+
+	url := "https://www.wagslane.dev/index.xml"
+	feed, err := fetchRssFeed(context.Background(), url)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Feed: %v\n", feed)
+	return nil
 }
 
 func register(s *state, cmd command) error {
@@ -175,4 +196,51 @@ func (c *commands) run(s *state, cmd command) error {
 		return fmt.Errorf("unknown command %v", cmd.name)
 	}
 	return f(s, cmd)
+}
+
+type RSSFeed struct {
+	Channel struct {
+		Title       string    `xml:"title"`
+		Link        string    `xml:"link"`
+		Description string    `xml:"description"`
+		Items       []RSSItem `xml:"item"`
+	} `xml:"channel"`
+}
+
+type RSSItem struct {
+	Title       string `xml:"title"`
+	Link        string `xml:"link"`
+	Description string `xml:"description"`
+	PubDate     string `xml:"pubDate"`
+}
+
+func fetchRssFeed(ctx context.Context, url string) (*RSSFeed, error) {
+	client := http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var feed RSSFeed
+	err = xml.NewDecoder(resp.Body).Decode(&feed)
+	if err != nil {
+		return nil, err
+	}
+
+	// Unescape HTML entities
+	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)
+	feed.Channel.Description = html.UnescapeString(feed.Channel.Description)
+	for i := range feed.Channel.Items {
+		feed.Channel.Items[i].Title = html.UnescapeString(feed.Channel.Items[i].Title)
+		feed.Channel.Items[i].Description = html.UnescapeString(feed.Channel.Items[i].Description)
+	}
+
+	return &feed, nil
 }
