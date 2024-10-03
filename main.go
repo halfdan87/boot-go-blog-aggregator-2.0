@@ -41,6 +41,8 @@ func main() {
 	c.register("agg", aggregate)
 	c.register("addfeed", addFeed)
 	c.register("feeds", allFeeds)
+	c.register("follow", follow)
+	c.register("following", following)
 
 	args := os.Args[1:]
 	if len(args) == 0 {
@@ -139,6 +141,57 @@ func allFeeds(s *state, cmd command) error {
 	return nil
 }
 
+func follow(s *state, cmd command) error {
+	if len(cmd.args) < 1 {
+		fmt.Println("No url given")
+		os.Exit(1)
+	}
+	url := cmd.args[0]
+
+	dbFeed, err := s.db.GetFeedByUrl(context.Background(), url)
+	if err != nil {
+		return err
+	}
+
+	getUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserId)
+	if err != nil {
+		return err
+	}
+
+	if getUser.Name != s.cfg.CurrentUserId {
+		return fmt.Errorf("you are not logged in")
+	}
+
+	createParams := database.CreateFeedFollowParams{
+		ID:     uuid.New(),
+		FeedID: dbFeed.ID,
+		UserID: getUser.ID,
+	}
+
+	dbFeedFollow, err := s.db.CreateFeedFollow(context.Background(), createParams)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Feed follow created: %s - %s\n", dbFeedFollow.FeedName, dbFeedFollow.UserName)
+	return nil
+}
+
+func following(s *state, _ command) error {
+	getUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserId)
+	if err != nil {
+		return err
+	}
+
+	follows, err := s.db.GetFeedFollowsForUser(context.Background(), getUser.ID)
+	if err != nil {
+		return err
+	}
+	for _, follow := range follows {
+		fmt.Printf("* %s\n", follow.FeedName)
+	}
+	return nil
+}
+
 func addFeed(s *state, cmd command) error {
 	if len(cmd.args) < 2 {
 		fmt.Println("No url given")
@@ -166,7 +219,20 @@ func addFeed(s *state, cmd command) error {
 	if err != nil {
 		return err
 	}
+
 	fmt.Printf("Feed created %v\n", dbFeed)
+
+	createFollowParams := database.CreateFeedFollowParams{
+		ID:     uuid.New(),
+		FeedID: dbFeed.ID,
+		UserID: getUser.ID,
+	}
+
+	_, err = s.db.CreateFeedFollow(context.Background(), createFollowParams)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
